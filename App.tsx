@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMatchData } from './hooks/useMatchData';
 import { MatchCard } from './components/MatchCard';
 import { LiveFeed } from './components/LiveFeed';
@@ -6,6 +6,8 @@ import { StatusIndicator } from './components/StatusIndicator';
 import { API_BASE_URL, WS_BASE_URL } from './constants';
 
 const App: React.FC = () => {
+  const pageSize = 6;
+  const [currentPage, setCurrentPage] = useState(1);
   const {
     matches,
     isLoading,
@@ -15,9 +17,25 @@ const App: React.FC = () => {
     wsError,
     status,
     activeMatchId,
+    newMatchesCount,
+    dismissNewMatches,
     watchMatch,
+    unwatchMatch,
     reloadMatches,
   } = useMatchData();
+
+  const totalPages = Math.max(1, Math.ceil(matches.length / pageSize));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const pagedMatches = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return matches.slice(startIndex, startIndex + pageSize);
+  }, [matches, currentPage, pageSize]);
 
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans">
@@ -27,7 +45,7 @@ const App: React.FC = () => {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-brand-yellow border-2 border-black rounded-2xl p-6 shadow-hard">
           <div>
             <h1 className="text-3xl font-black tracking-tight text-brand-dark mb-1">
-              LiveScore Center
+              Spotrz
             </h1>
             <p className="text-sm font-medium opacity-80">Real-time match data demo</p>
           </div>
@@ -52,6 +70,19 @@ const App: React.FC = () => {
                 API: {isLoading ? '...' : matches.length}
               </span>
             </div>
+            {newMatchesCount > 0 && (
+              <div className="flex items-center justify-between gap-3 bg-brand-yellow border-2 border-black rounded-xl px-4 py-3 shadow-hard-sm">
+                <span className="text-sm font-bold">
+                  {newMatchesCount} new match{newMatchesCount > 1 ? 'es' : ''} added
+                </span>
+                <button
+                  onClick={dismissNewMatches}
+                  className="px-3 py-1 rounded-full text-xs font-bold border-2 border-black bg-white hover:bg-gray-50 transition-all"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {isLoading && (
               <div className="p-12 text-center border-2 border-dashed border-gray-300 rounded-2xl">
@@ -86,16 +117,46 @@ const App: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {matches.map((match) => (
+              {pagedMatches.map((match) => (
                 <MatchCard 
                   key={match.id} 
                   match={match} 
                   // eslint-disable-next-line eqeqeq
                   isActive={activeMatchId == match.id}
                   onWatch={watchMatch}
+                  onUnwatch={unwatchMatch}
                 />
               ))}
             </div>
+            {!isLoading && !error && matches.length > pageSize && (
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <span className="text-xs font-medium text-gray-500">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className={`
+                      px-3 py-1.5 rounded-lg text-xs font-bold border-2 border-black transition-all
+                      ${currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white hover:bg-gray-50'}
+                    `}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`
+                      px-3 py-1.5 rounded-lg text-xs font-bold border-2 border-black transition-all
+                      ${currentPage === totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white hover:bg-gray-50'}
+                    `}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </main>
 
           {/* Right Column: Live Feed (Sticky on Desktop) */}
@@ -123,7 +184,7 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-black mb-2">How to Verify</h4>
-                <p className="mb-2">1. Click "Watch Live" on any card.</p>
+                <p className="mb-2">1. Click the action button on any card (it shows "Watch Live" for live games).</p>
                 <p className="mb-2">2. The status indicator top-right will turn green.</p>
                 <p>3. Wait for <code className="text-xs bg-gray-100 p-0.5 border border-gray-300 rounded">score_update</code> or <code className="text-xs bg-gray-100 p-0.5 border border-gray-300 rounded">commentary</code> events from the server. The card score updates instantly, and the right panel fills with text.</p>
               </div>

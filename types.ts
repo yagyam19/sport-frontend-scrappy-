@@ -81,6 +81,14 @@ export interface WSMessageSubscriptions {
   matchIds: Array<string | number>;
 }
 
+export interface WSMessageSubscribedAll {
+  type: 'subscribed_all';
+}
+
+export interface WSMessageUnsubscribedAll {
+  type: 'unsubscribed_all';
+}
+
 export type WSMessage =
   | WSMessageCommentary
   | WSMessageScore
@@ -89,4 +97,6 @@ export type WSMessage =
   | WSMessageError
   | WSMessageSubscribed
   | WSMessageUnsubscribed
-  | WSMessageSubscriptions;
+  | WSMessageSubscriptions
+  | WSMessageSubscribedAll
+  | WSMessageUnsubscribedAll;

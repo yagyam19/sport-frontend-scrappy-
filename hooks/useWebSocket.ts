@@ -4,25 +4,33 @@ import { ConnectionStatus, WSMessage } from '../types';
 
 interface UseWebSocketReturn {
   status: ConnectionStatus;
-  connect: (matchId: string | number) => void;
+  connectGlobal: () => void;
+  subscribeMatch: (matchId: string | number) => void;
+  unsubscribeMatch: (matchId: string | number) => void;
   disconnect: () => void;
-  activeMatchId: string | number | null;
 }
 
 export const useWebSocket = (
   onMessage: (msg: WSMessage) => void
 ): UseWebSocketReturn => {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const [activeMatchId, setActiveMatchId] = useState<string | number | null>(null);
   
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const isIntentionalClose = useRef(false);
-  const activeMatchIdRef = useRef<string | number | null>(null);
+  const subscribedMatchIdsRef = useRef(new Set<string>());
+
+  const normalizeId = (matchId: string | number) => String(matchId);
+
+  const sendMessage = useCallback((message: WSMessage | Record<string, unknown>) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify(message));
+    }
+  }, []);
 
   // Core connect function
-  const initConnection = useCallback((matchId: string | number) => {
+  const initConnection = useCallback(() => {
     // Cleanup previous connection
     if (ws.current) {
       isIntentionalClose.current = true;
@@ -33,7 +41,7 @@ export const useWebSocket = (
     isIntentionalClose.current = false;
 
     // Construct URL
-    const socketUrl = `${WS_BASE_URL}?matchId=${matchId}`;
+    const socketUrl = `${WS_BASE_URL}?all=1`;
     
     try {
       const socket = new WebSocket(socketUrl);
@@ -42,7 +50,12 @@ export const useWebSocket = (
       socket.onopen = () => {
         setStatus('connected');
         reconnectAttempts.current = 0;
-        socket.send(JSON.stringify({ type: 'subscribe', matchId }));
+        if (subscribedMatchIdsRef.current.size > 0) {
+          socket.send(JSON.stringify({
+            type: 'setSubscriptions',
+            matchIds: Array.from(subscribedMatchIdsRef.current),
+          }));
+        }
         console.log('[WebSocket] Connected successfully');
       };
 
@@ -80,9 +93,7 @@ export const useWebSocket = (
           
           reconnectTimeout.current = setTimeout(() => {
             reconnectAttempts.current += 1;
-            if (activeMatchIdRef.current != null) {
-                initConnection(activeMatchIdRef.current);
-            }
+            initConnection();
           }, delay);
         } else {
             // If closed intentionally, just set status
@@ -97,13 +108,26 @@ export const useWebSocket = (
   }, [onMessage]);
 
   // Public connect method
-  const connect = useCallback((matchId: string | number) => {
+  const connectGlobal = useCallback(() => {
     if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
     reconnectAttempts.current = 0;
-    setActiveMatchId(matchId);
-    activeMatchIdRef.current = matchId;
-    initConnection(matchId);
+    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    initConnection();
   }, [initConnection]);
+
+  const subscribeMatch = useCallback((matchId: string | number) => {
+    const normalized = normalizeId(matchId);
+    subscribedMatchIdsRef.current.add(normalized);
+    sendMessage({ type: 'subscribe', matchId });
+  }, [sendMessage]);
+
+  const unsubscribeMatch = useCallback((matchId: string | number) => {
+    const normalized = normalizeId(matchId);
+    subscribedMatchIdsRef.current.delete(normalized);
+    sendMessage({ type: 'unsubscribe', matchId });
+  }, [sendMessage]);
 
   // Public disconnect method
   const disconnect = useCallback(() => {
@@ -116,8 +140,6 @@ export const useWebSocket = (
       ws.current = null;
     }
     
-    setActiveMatchId(null);
-    activeMatchIdRef.current = null;
     setStatus('disconnected');
   }, []);
 
@@ -132,5 +154,5 @@ export const useWebSocket = (
     };
   }, []);
 
-  return { status, connect, disconnect, activeMatchId };
+  return { status, connectGlobal, subscribeMatch, unsubscribeMatch, disconnect };
 };
